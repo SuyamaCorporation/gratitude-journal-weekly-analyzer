@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>感謝日記週次分析ツール</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .word-cloud-item { display: inline-block; transition: transform 0.1s; }
+  .word-cloud-item:hover { transform: scale(1.1); }
+</style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+<div class="max-w-2xl mx-auto px-4 py-6">
+  <h1 class="text-2xl font-bold text-center text-pink-400 mb-1">🌸 感謝日記</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">毎日3つの感謝を記録して週次分析</p>
+
+  <!-- Date & Today's Entry -->
+  <div class="bg-gray-800 rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold text-gray-300">今日の感謝（<span id="today-date" class="text-pink-400"></span>）</h2>
+      <div class="flex items-center gap-2 text-sm">
+        <span class="text-gray-400 text-xs">気分:</span>
+        <select id="mood-select" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none" aria-label="今日の気分">
+          <option value="">—</option>
+          <option value="1">😢 1</option>
+          <option value="2">😕 2</option>
+          <option value="3">😐 3</option>
+          <option value="4">😊 4</option>
+          <option value="5">😄 5</option>
+        </select>
+      </div>
+    </div>
+    <div class="space-y-2 mb-3" id="gratitude-inputs">
+      <div class="flex items-center gap-2">
+        <span class="text-pink-400 font-bold text-sm w-4">1.</span>
+        <input type="text" id="g1" placeholder="感謝できること1つ目..."
+          class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-pink-400"
+          aria-label="感謝1" maxlength="100">
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-pink-400 font-bold text-sm w-4">2.</span>
+        <input type="text" id="g2" placeholder="感謝できること2つ目..."
+          class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-pink-400"
+          aria-label="感謝2" maxlength="100">
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-pink-400 font-bold text-sm w-4">3.</span>
+        <input type="text" id="g3" placeholder="感謝できること3つ目..."
+          class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-pink-400"
+          aria-label="感謝3" maxlength="100">
+      </div>
+    </div>
+    <button onclick="saveToday()" class="w-full py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-semibold" aria-label="保存する">💾 保存する</button>
+    <div id="save-msg" class="hidden text-center text-green-400 text-xs mt-2">保存しました！</div>
+  </div>
+
+  <!-- Weekly View -->
+  <div class="bg-gray-800 rounded-xl p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold text-gray-300">📅 今週の記録</h2>
+      <button onclick="startNewWeek()" class="px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs" aria-label="新しい週を始める">新しい週を始める</button>
+    </div>
+    <div id="weekly-entries" class="space-y-2 mb-4"></div>
+
+    <!-- Mood Chart -->
+    <div class="mb-4">
+      <div class="text-xs text-gray-400 mb-2">気分トレンド（今週）</div>
+      <div id="mood-chart" class="flex gap-1 items-end h-16"></div>
+      <div id="mood-labels" class="flex gap-1 mt-1 text-xs text-gray-500"></div>
+    </div>
+
+    <!-- Word Cloud -->
+    <div>
+      <div class="text-xs text-gray-400 mb-2">よく登場するキーワード</div>
+      <div id="word-cloud" class="bg-gray-900 rounded-lg p-3 min-h-16 leading-loose"></div>
+    </div>
+  </div>
+
+  <!-- Weekly Summary -->
+  <div class="bg-gray-800 rounded-xl p-4 mb-4">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3">📊 週次サマリー</h2>
+    <div id="weekly-summary" class="text-sm text-gray-300 leading-relaxed"></div>
+  </div>
+
+  <!-- Archive -->
+  <div class="bg-gray-800 rounded-xl p-4">
+    <button onclick="toggleArchive()" class="text-sm text-gray-400 underline">過去の週を表示/非表示</button>
+    <div id="archive-section" class="hidden mt-3 space-y-2"></div>
+  </div>
+</div>
+
+<script>
+const STOP_WORDS = new Set(['が','は','を','に','で','と','の','も','が','な','だ','た','した','して','している','という','ました','ます','です','ている','こと','これ','それ','あの','この','その','ある','いる','する','なる','ため','から','まで','より','だけ','など','ください','という','また','そして','しかし','ので','けど','ても','でも','だと','って','とき','とても','とも','さん','くん','ちゃん']);
+
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function getWeekEntries() {
+  return JSON.parse(localStorage.getItem('gratitude-week') || '[]');
+}
+
+function getArchive() {
+  return JSON.parse(localStorage.getItem('gratitude-archive') || '[]');
+}
+
+function loadToday() {
+  const dateStr = today();
+  document.getElementById('today-date').textContent = dateStr;
+  const entries = getWeekEntries();
+  const todayEntry = entries.find(e => e.date === dateStr);
+  if (todayEntry) {
+    document.getElementById('g1').value = todayEntry.gratitude[0] || '';
+    document.getElementById('g2').value = todayEntry.gratitude[1] || '';
+    document.getElementById('g3').value = todayEntry.gratitude[2] || '';
+    if (todayEntry.mood) document.getElementById('mood-select').value = todayEntry.mood;
+  }
+}
+
+function saveToday() {
+  const g1 = document.getElementById('g1').value.trim();
+  const g2 = document.getElementById('g2').value.trim();
+  const g3 = document.getElementById('g3').value.trim();
+  const mood = document.getElementById('mood-select').value;
+  const dateStr = today();
+
+  if (!g1 && !g2 && !g3) return;
+
+  let entries = getWeekEntries();
+  const idx = entries.findIndex(e => e.date === dateStr);
+  const entry = {date: dateStr, gratitude: [g1, g2, g3].filter(Boolean), mood: mood ? parseInt(mood) : null};
+  if (idx >= 0) entries[idx] = entry;
+  else entries.push(entry);
+
+  localStorage.setItem('gratitude-week', JSON.stringify(entries));
+
+  const msg = document.getElementById('save-msg');
+  msg.classList.remove('hidden');
+  setTimeout(() => msg.classList.add('hidden'), 2000);
+
+  renderWeek();
+}
+
+function renderWeek() {
+  const entries = getWeekEntries();
+  const container = document.getElementById('weekly-entries');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  if (entries.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'text-xs text-gray-500';
+    p.textContent = 'まだ記録がありません';
+    container.appendChild(p);
+  } else {
+    entries.slice().reverse().forEach(e => {
+      const div = document.createElement('div');
+      div.className = 'bg-gray-700 rounded-lg p-3';
+      const header = document.createElement('div');
+      header.className = 'flex items-center justify-between mb-1';
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'text-xs text-pink-400 font-semibold';
+      dateSpan.textContent = e.date;
+      const moodSpan = document.createElement('span');
+      moodSpan.className = 'text-sm';
+      const moodEmoji = ['','😢','😕','😐','😊','😄'];
+      moodSpan.textContent = e.mood ? moodEmoji[e.mood] + ' ' + e.mood : '';
+      header.appendChild(dateSpan);
+      header.appendChild(moodSpan);
+      div.appendChild(header);
+      e.gratitude.forEach((g, i) => {
+        const item = document.createElement('div');
+        item.className = 'text-sm text-gray-200 flex gap-1';
+        const dot = document.createElement('span');
+        dot.className = 'text-pink-500';
+        dot.textContent = '•';
+        const txt = document.createElement('span');
+        txt.textContent = g;
+        item.appendChild(dot);
+        item.appendChild(txt);
+        div.appendChild(item);
+      });
+      container.appendChild(div);
+    });
+  }
+
+  renderMoodChart(entries);
+  renderWordCloud(entries);
+  renderSummary(entries);
+}
+
+function renderMoodChart(entries) {
+  const chart = document.getElementById('mood-chart');
+  const labels = document.getElementById('mood-labels');
+  while (chart.firstChild) chart.removeChild(chart.firstChild);
+  while (labels.firstChild) labels.removeChild(labels.firstChild);
+
+  const days = ['月','火','水','木','金','土','日'];
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay() + 1);
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i);
+    const dateStr = d.toISOString().split('T')[0];
+    const entry = entries.find(e => e.date === dateStr);
+    const moodVal = entry?.mood || 0;
+
+    const bar = document.createElement('div');
+    bar.className = 'flex-1 rounded-t';
+    const heightPct = moodVal > 0 ? (moodVal / 5 * 100) : 0;
+    bar.style.height = heightPct + '%';
+    bar.style.minHeight = moodVal > 0 ? '4px' : '0';
+    const colors = ['','bg-red-600','bg-orange-600','bg-yellow-600','bg-green-500','bg-pink-500'];
+    if (moodVal > 0) bar.classList.add(colors[moodVal]);
+    else { bar.className = 'flex-1 rounded-t bg-gray-700'; bar.style.height = '10%'; }
+    bar.title = days[i] + ': ' + (moodVal || '未記録');
+    chart.appendChild(bar);
+
+    const lbl = document.createElement('span');
+    lbl.className = 'flex-1 text-center text-xs text-gray-500';
+    lbl.textContent = days[i];
+    labels.appendChild(lbl);
+  }
+}
+
+function renderWordCloud(entries) {
+  const cloud = document.getElementById('word-cloud');
+  while (cloud.firstChild) cloud.removeChild(cloud.firstChild);
+
+  const allText = entries.flatMap(e => e.gratitude).join(' ');
+  const words = allText.split(/[\s、。！？\n，,.!?]+/).filter(w => w.length >= 2 && !STOP_WORDS.has(w));
+  const freq = new Map();
+  words.forEach(w => freq.set(w, (freq.get(w) || 0) + 1));
+  const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+  if (sorted.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'text-xs text-gray-500';
+    p.textContent = '記録が増えるとキーワードが表示されます';
+    cloud.appendChild(p);
+    return;
+  }
+
+  const maxFreq = sorted[0][1];
+  const colors = ['text-pink-400','text-purple-400','text-teal-400','text-blue-400','text-yellow-400','text-green-400'];
+  sorted.forEach(([word, count], i) => {
+    const size = 0.7 + (count / maxFreq) * 1.1;
+    const span = document.createElement('span');
+    span.className = 'word-cloud-item mr-2 cursor-default ' + colors[i % colors.length];
+    span.style.fontSize = size + 'rem';
+    span.textContent = word;
+    span.title = count + '回登場';
+    span.setAttribute('aria-label', word + '(' + count + '回)');
+    cloud.appendChild(span);
+  });
+}
+
+function renderSummary(entries) {
+  const container = document.getElementById('weekly-summary');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  if (entries.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'text-gray-500 text-sm';
+    p.textContent = '記録が増えるとサマリーが生成されます';
+    container.appendChild(p);
+    return;
+  }
+
+  const allText = entries.flatMap(e => e.gratitude).join(' ');
+  const words = allText.split(/[\s、。！？\n，,.!?]+/).filter(w => w.length >= 2 && !STOP_WORDS.has(w));
+  const freq = new Map();
+  words.forEach(w => freq.set(w, (freq.get(w) || 0) + 1));
+  const topWord = [...freq.entries()].sort((a,b) => b[1]-a[1])[0]?.[0] || '';
+
+  const totalEntries = entries.length;
+  const moodEntries = entries.filter(e => e.mood);
+  const avgMood = moodEntries.length > 0 ? (moodEntries.reduce((s, e) => s + e.mood, 0) / moodEntries.length).toFixed(1) : null;
+  const totalGratitudes = entries.reduce((s, e) => s + e.gratitude.length, 0);
+
+  const summary = document.createElement('div');
+  summary.className = 'space-y-2 text-sm text-gray-200';
+
+  const lines = [
+    '📅 今週は ' + totalEntries + ' 日間記録しました（合計 ' + totalGratitudes + ' 個の感謝）。',
+    topWord ? '✨ 今週は「' + topWord + '」についてよく感謝していました。' : '',
+    avgMood ? '😊 今週の平均気分スコアは ' + avgMood + ' / 5 でした。' : '',
+    totalGratitudes >= 15 ? '🌟 素晴らしい！毎日3つの感謝を記録し続けています。' : totalGratitudes >= 10 ? '👍 良いペースで記録できています。' : '💪 記録を続けてポジティブな習慣を作りましょう。',
+  ].filter(Boolean);
+
+  lines.forEach(line => {
+    const p = document.createElement('p');
+    p.textContent = line;
+    summary.appendChild(p);
+  });
+  container.appendChild(summary);
+}
+
+function startNewWeek() {
+  const current = getWeekEntries();
+  if (current.length === 0) return;
+  const archive = getArchive();
+  archive.unshift({week: today(), entries: current});
+  if (archive.length > 30) archive.length = 30;
+  localStorage.setItem('gratitude-archive', JSON.stringify(archive));
+  localStorage.setItem('gratitude-week', '[]');
+  document.getElementById('g1').value = '';
+  document.getElementById('g2').value = '';
+  document.getElementById('g3').value = '';
+  document.getElementById('mood-select').value = '';
+  renderWeek();
+  renderArchive();
+}
+
+function toggleArchive() {
+  const sec = document.getElementById('archive-section');
+  sec.classList.toggle('hidden');
+  if (!sec.classList.contains('hidden')) renderArchive();
+}
+
+function renderArchive() {
+  const container = document.getElementById('archive-section');
+  while (container.firstChild) container.removeChild(container.firstChild);
+  const archive = getArchive();
+  if (archive.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'text-xs text-gray-500';
+    p.textContent = 'アーカイブはまだありません';
+    container.appendChild(p);
+    return;
+  }
+  archive.forEach(week => {
+    const div = document.createElement('div');
+    div.className = 'bg-gray-700 rounded-lg p-3';
+    const hdr = document.createElement('div');
+    hdr.className = 'text-xs text-gray-400 mb-2';
+    hdr.textContent = '週: ' + week.week + '（' + week.entries.length + '日間）';
+    div.appendChild(hdr);
+    week.entries.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'text-xs text-gray-300 mb-1';
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'text-pink-400 mr-2';
+      dateSpan.textContent = e.date;
+      row.appendChild(dateSpan);
+      const txt = document.createElement('span');
+      txt.textContent = e.gratitude.join(' / ');
+      row.appendChild(txt);
+      div.appendChild(row);
+    });
+    container.appendChild(div);
+  });
+}
+
+loadToday();
+renderWeek();
+</script>
+</body>
+</html>
